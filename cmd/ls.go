@@ -77,11 +77,10 @@ func printProject(dropDir, project, prefix string) error {
 
 	var sessions, files []string
 	for _, e := range entries {
-		if isHidden(e.Name()) {
-			continue
-		}
 		if e.IsDir() {
-			sessions = append(sessions, e.Name())
+			if !isHidden(e.Name()) {
+				sessions = append(sessions, e.Name())
+			}
 		} else {
 			files = append(files, e.Name())
 		}
@@ -122,7 +121,7 @@ func printSession(sessionDir, prefix string) {
 	}
 	var names []string
 	for _, e := range entries {
-		if !e.IsDir() && !isHidden(e.Name()) {
+		if !e.IsDir() {
 			names = append(names, e.Name())
 		}
 	}
