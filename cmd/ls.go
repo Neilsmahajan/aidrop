@@ -51,7 +51,7 @@ func ls(cmd *cobra.Command, args []string) error {
 
 	var projects []string
 	for _, e := range entries {
-		if e.IsDir() {
+		if e.IsDir() && !isHidden(e.Name()) {
 			projects = append(projects, e.Name())
 		}
 	}
@@ -77,6 +77,9 @@ func printProject(dropDir, project, prefix string) error {
 
 	var sessions, files []string
 	for _, e := range entries {
+		if isHidden(e.Name()) {
+			continue
+		}
 		if e.IsDir() {
 			sessions = append(sessions, e.Name())
 		} else {
@@ -119,7 +122,7 @@ func printSession(sessionDir, prefix string) {
 	}
 	var names []string
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() && !isHidden(e.Name()) {
 			names = append(names, e.Name())
 		}
 	}

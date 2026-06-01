@@ -22,6 +22,20 @@ make install
 
 ---
 
+## Configuration
+
+### `AIDROP_DIR`
+
+By default aidrop stores files at `~/AIDrop/`. Set `AIDROP_DIR` to use a different location:
+
+```sh
+export AIDROP_DIR=/tmp/aidrop-scratch
+aidrop add myfile.go
+# → /tmp/aidrop-scratch/<project>/myfile.go
+```
+
+---
+
 ## Directory structure
 
 ```
@@ -41,10 +55,10 @@ make install
 
 ### `aidrop add`
 
-Copy (or move) one or more files into the staging area.
+Copy (or move) one or more files or directories into the staging area.
 
 ```
-aidrop add [flags] <file> [files...]
+aidrop add [flags] <file|dir> [files|dirs...]
 ```
 
 | Flag | Short | Default | Description |
@@ -59,9 +73,9 @@ aidrop add [flags] <file> [files...]
 3. `"default"` if no git repository is detected.
 
 **Notes:**
+- Directories are copied recursively, preserving their internal structure. Hidden files (dotfiles, `.DS_Store`) are skipped automatically.
 - Symbolic links are followed — the resolved target is copied, not the link itself.
 - Filename conflicts are resolved automatically by appending a numeric suffix (`file-2.txt`, `file-3.txt`, …).
-- Directories are not supported; use a shell glob to expand them (`*.go`, `src/**/*.ts`).
 
 **Examples:**
 
@@ -77,6 +91,9 @@ aidrop add -p snake-game -s add-animation animate.go
 
 # Move a file (remove from source after staging)
 aidrop add -s stack-overflow-issue -m output.log
+
+# Copy an entire directory tree
+aidrop add -p my-project src/
 ```
 
 ---
@@ -92,6 +109,8 @@ aidrop ls [flags]
 | Flag | Short | Default | Description |
 |---|---|---|---|
 | `--project` | `-p` | _(all)_ | Restrict output to a specific project |
+
+Hidden files (dotfiles, `.DS_Store`) are never shown.
 
 **Examples:**
 
@@ -114,6 +133,60 @@ AIDrop  /Users/you/AIDrop
 │   └── handler.go
 └── default/
     └── notes.md
+```
+
+---
+
+### `aidrop open`
+
+Open the AIDrop directory, a project, or a session in the system file manager (Finder on macOS, `xdg-open` on Linux).
+
+```
+aidrop open [project [session]]
+```
+
+**Examples:**
+
+```sh
+# Open ~/AIDrop/ in Finder
+aidrop open
+
+# Open a project folder
+aidrop open federation-service
+
+# Open a specific session
+aidrop open federation-service 2026-05-31-auth-bug
+```
+
+---
+
+### `aidrop rm`
+
+Remove a project or session directory from the staging area.
+
+```
+aidrop rm [flags] <project> [session]
+```
+
+| Flag | Short | Default | Description |
+|---|---|---|---|
+| `--soft` | `-s` | false | Move to the system trash instead of permanently deleting |
+| `--dry-run` | | false | Preview what would be removed without making any changes |
+
+**Examples:**
+
+```sh
+# Delete an entire project
+aidrop rm federation-service
+
+# Delete a single session
+aidrop rm federation-service 2026-05-31-auth-bug
+
+# Move to trash instead of deleting
+aidrop rm -s federation-service
+
+# Preview without deleting
+aidrop rm --dry-run federation-service
 ```
 
 ---
@@ -163,17 +236,51 @@ aidrop clean --loose -d 30 --dry-run
 
 ---
 
+## Shell completions
+
+Cobra provides built-in tab completion for bash, zsh, fish, and PowerShell.
+
+**Manual setup:**
+
+```sh
+# bash
+aidrop completion bash > /etc/bash_completion.d/aidrop
+# or for user-local install:
+aidrop completion bash > ~/.local/share/bash-completion/completions/aidrop
+
+# zsh  (add ~/.zsh/completions to your fpath first)
+aidrop completion zsh > ~/.zsh/completions/_aidrop
+
+# fish
+aidrop completion fish > ~/.config/fish/completions/aidrop.fish
+
+# PowerShell
+aidrop completion powershell | Out-String | Invoke-Expression
+```
+
+**Via Makefile:**
+
+```sh
+make completion-bash   # Install bash completion
+make completion-zsh    # Install zsh completion
+make completion-fish   # Install fish completion
+make completion        # Install all three
+```
+
+---
+
 ## Build targets
 
 ```sh
-make build        # Compile the binary
-make install      # Install to $GOPATH/bin
-make test         # Run tests
-make fmt          # Format source code
-make vet          # Run go vet
-make lint         # Run golangci-lint
-make coverage     # Generate HTML coverage report
-make build-all    # Cross-compile for Linux, Windows, and macOS
-make clean        # Remove build artifacts
-make help         # List all targets
+make build            # Compile the binary
+make install          # Install to $GOPATH/bin
+make test             # Run tests
+make fmt              # Format source code
+make vet              # Run go vet
+make lint             # Run golangci-lint
+make coverage         # Generate HTML coverage report
+make build-all        # Cross-compile for Linux, Windows, and macOS
+make clean            # Remove build artifacts
+make completion       # Install shell completions (bash, zsh, fish)
+make help             # List all targets
 ```

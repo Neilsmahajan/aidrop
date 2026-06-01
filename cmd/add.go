@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,9 +12,9 @@ import (
 )
 
 var addCmd = &cobra.Command{
-	Use:   "add <file> [files...]",
-	Short: "Add files to the AIDrop staging area",
-	Long: `Copy (or move) one or more files into the AIDrop staging area at ~/AIDrop/<project>/[<date>-<session>/].
+	Use:   "add <file|dir> [files|dirs...]",
+	Short: "Add files or directories to the AIDrop staging area",
+	Long: `Copy (or move) one or more files or directories into the AIDrop staging area at ~/AIDrop/<project>/[<date>-<session>/].
 
 Project resolution order:
   1. The value of --project if provided.
@@ -23,6 +24,9 @@ Project resolution order:
 If --session is specified, files are placed inside a date-prefixed subdirectory
 (YYYY-MM-DD-<session>) within the project folder. Without --session, files land
 directly at the project root.
+
+When a directory is provided it is copied recursively, preserving its internal
+structure under the destination. Hidden files (dotfiles, .DS_Store) are skipped.
 
 Filename conflicts are resolved automatically by appending a numeric suffix
 (e.g., file-2.txt, file-3.txt).
@@ -37,7 +41,10 @@ Examples:
     Copies animate.go to ~/AIDrop/snake-game/2026-05-31-add-animation/animate.go
 
   aidrop add -s stack-overflow-issue -m output.log
-    Moves output.log to ~/AIDrop/<git-repo>/2026-05-31-stack-overflow-issue/output.log`,
+    Moves output.log to ~/AIDrop/<git-repo>/2026-05-31-stack-overflow-issue/output.log
+
+  aidrop add -p my-project src/
+    Copies the src/ directory tree to ~/AIDrop/my-project/src/`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: add,
 }
@@ -85,7 +92,10 @@ func add(cmd *cobra.Command, args []string) error {
 		}
 
 		if info.IsDir() {
-			fmt.Fprintf(os.Stderr, "warning: skipping %s: directories are not supported; use a glob to expand individual files\n", arg)
+			destSubDir := filepath.Join(destDir, filepath.Base(resolved))
+			if err := copyDir(resolved, destSubDir, move); err != nil {
+				fmt.Fprintf(os.Stderr, "error: could not copy directory %s: %v\n", arg, err)
+			}
 			continue
 		}
 
@@ -132,6 +142,50 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Sync()
+}
+
+// copyDir recursively copies (or moves) the directory tree rooted at src into
+// dst, preserving the internal structure. Hidden files (dotfiles) are skipped.
+func copyDir(src, dst string, move bool) error {
+	return fs.WalkDir(os.DirFS(src), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// Skip hidden files and directories at any level.
+		if isHidden(d.Name()) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+
+		destPath := filepath.Join(dst, path)
+
+		if d.IsDir() {
+			return os.MkdirAll(destPath, 0755)
+		}
+
+		srcPath := filepath.Join(src, path)
+		destPath = resolveConflict(destPath)
+
+		if move {
+			if err := os.Rename(srcPath, destPath); err != nil {
+				if err2 := copyFile(srcPath, destPath); err2 != nil {
+					return fmt.Errorf("could not move %s: %w", srcPath, err2)
+				}
+				if err2 := os.Remove(srcPath); err2 != nil {
+					fmt.Fprintf(os.Stderr, "warning: file copied but could not remove source %s: %v\n", srcPath, err2)
+				}
+			}
+			fmt.Printf("moved  %s  →  %s\n", srcPath, destPath)
+		} else {
+			if err := copyFile(srcPath, destPath); err != nil {
+				return fmt.Errorf("could not copy %s: %w", srcPath, err)
+			}
+			fmt.Printf("added  %s  →  %s\n", srcPath, destPath)
+		}
+		return nil
+	})
 }
 
 func init() {

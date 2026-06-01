@@ -8,13 +8,24 @@ import (
 	"strings"
 )
 
-// getAIDropDir returns the path to the AIDrop staging directory (~/AIDrop).
+// getAIDropDir returns the path to the AIDrop staging directory.
+// The location can be overridden by setting the AIDROP_DIR environment variable.
+// When unset it defaults to ~/AIDrop.
 func getAIDropDir() (string, error) {
+	if dir := os.Getenv("AIDROP_DIR"); dir != "" {
+		return dir, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("could not determine home directory: %w", err)
 	}
 	return filepath.Join(home, "AIDrop"), nil
+}
+
+// isHidden reports whether a filesystem entry name should be hidden from output.
+// Currently this filters macOS metadata files (.DS_Store) and any dotfile.
+func isHidden(name string) bool {
+	return len(name) > 0 && name[0] == '.'
 }
 
 // getGitRepoName returns the base name of the current git repository root,
