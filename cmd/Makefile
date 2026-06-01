@@ -1,4 +1,4 @@
-# Snake Game Makefile
+# aidrop Makefile
 # Author: Neil Mahajan <neilsmahajan@gmail.com>
 
 # Go parameters
@@ -93,26 +93,57 @@ install:
 uninstall:
 	rm -f $(shell $(GOCMD) env GOPATH)/bin/$(BINARY_NAME)
 
+# Shell completions
+# Generates completion scripts and installs them to the standard system locations.
+# After running, reload your shell or source the installed file.
+.PHONY: completion-bash
+completion-bash: build
+	@mkdir -p /etc/bash_completion.d 2>/dev/null || mkdir -p $(HOME)/.local/share/bash-completion/completions
+	./$(BINARY_NAME) completion bash > /etc/bash_completion.d/$(BINARY_NAME) 2>/dev/null || \
+		./$(BINARY_NAME) completion bash > $(HOME)/.local/share/bash-completion/completions/$(BINARY_NAME)
+	@echo "Bash completion installed. Restart your shell or run: source ~/.bashrc"
+
+.PHONY: completion-zsh
+completion-zsh: build
+	@mkdir -p $(HOME)/.zsh/completions
+	./$(BINARY_NAME) completion zsh > $(HOME)/.zsh/completions/_$(BINARY_NAME)
+	@echo "Zsh completion installed to ~/.zsh/completions/_$(BINARY_NAME)"
+	@echo "Make sure your .zshrc contains: fpath=(~/.zsh/completions \$$fpath) && autoload -U compinit && compinit"
+
+.PHONY: completion-fish
+completion-fish: build
+	@mkdir -p $(HOME)/.config/fish/completions
+	./$(BINARY_NAME) completion fish > $(HOME)/.config/fish/completions/$(BINARY_NAME).fish
+	@echo "Fish completion installed to ~/.config/fish/completions/$(BINARY_NAME).fish"
+
+.PHONY: completion
+completion: completion-bash completion-zsh completion-fish
+
 # Help target
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  all          - Run tests and build"
-	@echo "  build        - Build the binary"
-	@echo "  test         - Run tests"
-	@echo "  clean        - Clean build artifacts"
-	@echo "  run          - Build and run the game"
-	@echo "  deps         - Download dependencies"
-	@echo "  tidy         - Tidy module dependencies"
-	@echo "  build-linux  - Cross-compile for Linux"
-	@echo "  build-windows- Cross-compile for Windows"
-	@echo "  build-macos  - Cross-compile for macOS"
-	@echo "  build-all    - Cross-compile for all platforms"
-	@echo "  fmt          - Format Go code"
-	@echo "  vet          - Run go vet"
-	@echo "  lint         - Run golangci-lint"
-	@echo "  coverage     - Generate test coverage report"
-	@echo "  benchmark    - Run benchmarks"
-	@echo "  install      - Install binary to GOPATH/bin"
-	@echo "  uninstall    - Remove binary from GOPATH/bin"
-	@echo "  help         - Show this help message"
+	@echo "  all              - Run tests and build"
+	@echo "  build            - Build the binary"
+	@echo "  test             - Run tests"
+	@echo "  clean            - Clean build artifacts"
+	@echo "  run              - Build and run the binary"
+	@echo "  deps             - Download dependencies"
+	@echo "  tidy             - Tidy module dependencies"
+	@echo "  build-linux      - Cross-compile for Linux"
+	@echo "  build-windows    - Cross-compile for Windows"
+	@echo "  build-macos      - Cross-compile for macOS"
+	@echo "  build-all        - Cross-compile for all platforms"
+	@echo "  fmt              - Format Go code"
+	@echo "  vet              - Run go vet"
+	@echo "  lint             - Run golangci-lint"
+	@echo "  coverage         - Generate test coverage report"
+	@echo "  benchmark        - Run benchmarks"
+	@echo "  install          - Install binary to GOPATH/bin"
+	@echo "  uninstall        - Remove binary from GOPATH/bin"
+	@echo "  completion-bash  - Install bash tab completion"
+	@echo "  completion-zsh   - Install zsh tab completion"
+	@echo "  completion-fish  - Install fish tab completion"
+	@echo "  completion       - Install all shell completions"
+	@echo "  help             - Show this help message"
+
