@@ -2,39 +2,144 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 
 	"github.com/spf13/cobra"
 )
 
-// lsCmd represents the ls command
 var lsCmd = &cobra.Command{
 	Use:   "ls",
-	Short: "List out all your files, projects, and sessions.",
-	Long: `Print a tree of all of your files under the AIDrop directory organized by project and session.
+	Short: "List staged files organized by project and session",
+	Long: `Print a tree of all files under the AIDrop directory, organized by project and session.
 
-	Specify a project to only list the files under that project.
+Use --project to narrow the output to a single project.
 
-	For example:
-	aidrop ls
-		prints out all your files under the AIDrop directory organized by project and session.
-	aidrop ls -p federation-service
-		prints out all your files under the AIDrop/federation-service directory organized by session.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("ls called")
-	},
+Examples:
+  aidrop ls
+    Prints the full AIDrop tree across all projects and sessions.
+
+  aidrop ls -p federation-service
+    Prints only the files under ~/AIDrop/federation-service/.`,
+	RunE: ls,
+}
+
+func ls(cmd *cobra.Command, args []string) error {
+	project, _ := cmd.Flags().GetString("project")
+
+	dropDir, err := getAIDropDir()
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(dropDir); os.IsNotExist(err) {
+		fmt.Println("AIDrop directory does not exist yet. Run `aidrop add` to get started.")
+		return nil
+	}
+
+	fmt.Printf("AIDrop  %s\n", dropDir)
+
+	if project != "" {
+		return printProject(dropDir, project, "")
+	}
+
+	entries, err := os.ReadDir(dropDir)
+	if err != nil {
+		return fmt.Errorf("could not read AIDrop directory: %w", err)
+	}
+
+	var projects []string
+	for _, e := range entries {
+		if e.IsDir() {
+			projects = append(projects, e.Name())
+		}
+	}
+	sort.Strings(projects)
+
+	for i, proj := range projects {
+		isLast := i == len(projects)-1
+		connector, childPrefix := treeChars(isLast)
+		fmt.Printf("%s%s/\n", connector, proj)
+		if err := printProject(dropDir, proj, childPrefix); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printProject(dropDir, project, prefix string) error {
+	projDir := filepath.Join(dropDir, project)
+	entries, err := os.ReadDir(projDir)
+	if err != nil {
+		return fmt.Errorf("could not read project %q: %w", project, err)
+	}
+
+	var sessions, files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			sessions = append(sessions, e.Name())
+		} else {
+			files = append(files, e.Name())
+		}
+	}
+	sort.Strings(sessions)
+	sort.Strings(files)
+
+	// Sessions are printed first, then loose files.
+	type entry struct {
+		name      string
+		isSession bool
+	}
+	var all []entry
+	for _, s := range sessions {
+		all = append(all, entry{s, true})
+	}
+	for _, f := range files {
+		all = append(all, entry{f, false})
+	}
+
+	for i, item := range all {
+		isLast := i == len(all)-1
+		connector, childPrefix := treeChars(isLast)
+		if item.isSession {
+			fmt.Printf("%s%s%s/\n", prefix, connector, item.name)
+			printSession(filepath.Join(projDir, item.name), prefix+childPrefix)
+		} else {
+			fmt.Printf("%s%s%s\n", prefix, connector, item.name)
+		}
+	}
+	return nil
+}
+
+func printSession(sessionDir, prefix string) {
+	entries, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	for i, name := range names {
+		isLast := i == len(names)-1
+		connector, _ := treeChars(isLast)
+		fmt.Printf("%s%s%s\n", prefix, connector, name)
+	}
+}
+
+// treeChars returns the branch connector and child prefix for tree rendering.
+func treeChars(isLast bool) (connector, childPrefix string) {
+	if isLast {
+		return "└── ", "    "
+	}
+	return "├── ", "│   "
 }
 
 func init() {
 	rootCmd.AddCommand(lsCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// lsCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// lsCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	lsCmd.Flags().StringP("project", "p", "", "The project to list the files under")
+	lsCmd.Flags().StringP("project", "p", "", "Restrict output to a specific project")
 }

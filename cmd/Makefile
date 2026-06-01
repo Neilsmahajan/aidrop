@@ -1,4 +1,4 @@
-# Snake Game Makefile
+# aidrop Makefile
 # Author: Neil Mahajan <neilsmahajan@gmail.com>
 
 # Go parameters
@@ -101,7 +101,7 @@ help:
 	@echo "  build        - Build the binary"
 	@echo "  test         - Run tests"
 	@echo "  clean        - Clean build artifacts"
-	@echo "  run          - Build and run the game"
+	@echo "  run          - Build and run the binary"
 	@echo "  deps         - Download dependencies"
 	@echo "  tidy         - Tidy module dependencies"
 	@echo "  build-linux  - Cross-compile for Linux"

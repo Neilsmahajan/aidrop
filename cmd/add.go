@@ -2,58 +2,141 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
-// addCmd represents the add command
 var addCmd = &cobra.Command{
-	Use:   "add",
-	Short: "Add files to your AI drop directory",
-	Long: `Copy a file or files by providing the relative path to your AIDrop directory.
+	Use:   "add <file> [files...]",
+	Short: "Add files to the AIDrop staging area",
+	Long: `Copy (or move) one or more files into the AIDrop staging area at ~/AIDrop/<project>/[<date>-<session>/].
 
-	Specify a project to move the files into the project name subdirectory under the AIDrop directory. 
-	If no project is specified, the git repository name will be used. Otherwise, "default-project" will be used.
+Project resolution order:
+  1. The value of --project if provided.
+  2. The name of the current git repository root (automatic inference).
+  3. "default" if no git repository is detected.
 
-	Provide a session name to move the files inside a subdirectory within the project subdirectory. 
-	The session directory name will have a day in the format of year-month-day prepended to the directory name.
-	If no session is provided, the files will be added to the root of the project directory under the AIDrop directory. 
+If --session is specified, files are placed inside a date-prefixed subdirectory
+(YYYY-MM-DD-<session>) within the project folder. Without --session, files land
+directly at the project root.
 
-	Use the move flag to move the files instead of copying them to the AIDrop directory. 
+Filename conflicts are resolved automatically by appending a numeric suffix
+(e.g., file-2.txt, file-3.txt).
 
-	Note: if a file name conflict occurs, a number will be prepended to the file name. If main.go already exists, 
-		main-2.go will be used instead.
-	
-	Note: for symlinks if a symlink is provided, the target will be copied instead of the symlink. 
+Symbolic links are followed — the resolved target is copied, not the link itself.
 
-	For example:
-	aidrop add -p federation-service README.md internal/models.go
-		copies ./README.md and ./internal/models.go to ~/AIDrop/federation-service/README.md and ~/AIDrop/federation-service/models.go
-	aidrop add -p snake-game -s add-animation animate.go
-		copies ./animate.go to ~/AIDrop/snake-game/2024-06-14-add-animation/animate.go
-	aidrop add -p simulator -s stack-overflow-issue -m output.log
-		moves ./output.log to ~/AIDrop/simulator/2026-05-30-stack-overflow-issue -m output.log`,
-	Run: add,
+Examples:
+  aidrop add -p federation-service README.md internal/models.go
+    Copies README.md and models.go to ~/AIDrop/federation-service/
+
+  aidrop add -p snake-game -s add-animation animate.go
+    Copies animate.go to ~/AIDrop/snake-game/2026-05-31-add-animation/animate.go
+
+  aidrop add -s stack-overflow-issue -m output.log
+    Moves output.log to ~/AIDrop/<git-repo>/2026-05-31-stack-overflow-issue/output.log`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: add,
 }
 
-func add(cmd *cobra.Command, args []string) {
-	fmt.Println("add called")
+func add(cmd *cobra.Command, args []string) error {
+	project, _ := cmd.Flags().GetString("project")
+	session, _ := cmd.Flags().GetString("session")
+	move, _ := cmd.Flags().GetBool("move")
+
+	// Infer project name if not explicitly provided.
+	if project == "" {
+		project = getGitRepoName()
+	}
+	if project == "" {
+		project = "default"
+	}
+
+	dropDir, err := getAIDropDir()
+	if err != nil {
+		return err
+	}
+
+	destDir := filepath.Join(dropDir, project)
+	if session != "" {
+		datePrefix := time.Now().Format("2006-01-02")
+		destDir = filepath.Join(destDir, datePrefix+"-"+session)
+	}
+
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("could not create destination directory %s: %w", destDir, err)
+	}
+
+	for _, arg := range args {
+		// Resolve symlinks so we always copy the real file content.
+		resolved, err := filepath.EvalSymlinks(arg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: skipping %s: %v\n", arg, err)
+			continue
+		}
+
+		info, err := os.Stat(resolved)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: skipping %s: %v\n", arg, err)
+			continue
+		}
+
+		if info.IsDir() {
+			fmt.Fprintf(os.Stderr, "warning: skipping %s: directories are not supported; use a glob to expand individual files\n", arg)
+			continue
+		}
+
+		destPath := resolveConflict(filepath.Join(destDir, filepath.Base(resolved)))
+
+		if move {
+			if err := os.Rename(resolved, destPath); err != nil {
+				// os.Rename fails across filesystem boundaries; fall back to copy+remove.
+				if err2 := copyFile(resolved, destPath); err2 != nil {
+					fmt.Fprintf(os.Stderr, "error: could not move %s: %v\n", arg, err2)
+					continue
+				}
+				if err2 := os.Remove(resolved); err2 != nil {
+					fmt.Fprintf(os.Stderr, "warning: file copied but could not remove source %s: %v\n", arg, err2)
+				}
+			}
+			fmt.Printf("moved  %s  →  %s\n", arg, destPath)
+		} else {
+			if err := copyFile(resolved, destPath); err != nil {
+				fmt.Fprintf(os.Stderr, "error: could not copy %s: %v\n", arg, err)
+				continue
+			}
+			fmt.Printf("added  %s  →  %s\n", arg, destPath)
+		}
+	}
+	return nil
+}
+
+// copyFile copies the file at src to dst, preserving content exactly.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }
 
 func init() {
 	rootCmd.AddCommand(addCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// addCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// addCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-
-	addCmd.Flags().StringP("project", "p", "default-project", "specify a project name")
-	addCmd.Flags().StringP("session", "s", "", "specify a session name")
-	addCmd.Flags().BoolP("move", "m", false, "move file to project instead of copying")
+	addCmd.Flags().StringP("project", "p", "", "Project name (defaults to git repository name, then \"default\")")
+	addCmd.Flags().StringP("session", "s", "", "Session name; places files in a YYYY-MM-DD-<session> subdirectory")
+	addCmd.Flags().BoolP("move", "m", false, "Move files instead of copying them")
 }
